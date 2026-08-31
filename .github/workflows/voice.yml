@@ -8,6 +8,11 @@ on:
         required: true
         type: string
 
+      chat_id:
+        description: "Telegram chat ID"
+        required: true
+        type: string
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
