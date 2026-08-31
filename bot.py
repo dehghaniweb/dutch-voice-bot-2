@@ -1,6 +1,11 @@
 import os
+import time
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -13,11 +18,17 @@ from telegram.ext import (
 from playwright.async_api import async_playwright
 
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TOKEN = os.getenv(
+    "TELEGRAM_BOT_TOKEN"
+)
 
-VOICE_URL = "https://voicelime.com/voice-generator"
+VOICE_URL = (
+    "https://voicelime.com/voice-generator"
+)
+
 
 VOICES = {
+
     "colette": (
         "Colette",
         "nl-NL-ColetteNeural"
@@ -34,6 +45,29 @@ VOICES = {
     ),
 }
 
+
+SPEEDS = {
+
+    "slow": (
+        "🐢 کمی کم",
+        -10
+    ),
+
+    "normal": (
+        "🎙 متوسط",
+        0
+    ),
+
+    "fast": (
+        "⚡ کمی زیاد",
+        10
+    ),
+}
+
+
+# =================================
+# START
+# =================================
 
 async def start(
     update: Update,
@@ -79,6 +113,10 @@ async def start(
     )
 
 
+# =================================
+# VOICE
+# =================================
+
 async def voice_selected(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
@@ -98,31 +136,127 @@ async def voice_selected(
 
     voice_name, voice_value = VOICES[key]
 
-    context.user_data[
-        "voice"
-    ] = {
+    context.user_data["voice"] = {
         "name": voice_name,
         "value": voice_value
     }
 
+    keyboard = [
+
+        [
+            InlineKeyboardButton(
+                "🐢 کمی کم",
+                callback_data="speed_slow"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "🎙 متوسط",
+                callback_data="speed_normal"
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
+                "⚡ کمی زیاد",
+                callback_data="speed_fast"
+            )
+        ]
+
+    ]
+
     await query.edit_message_text(
 
-        "✅ Voice انتخاب شد:\n\n"
-        "🎙 " + voice_name +
+        "🎙 Voice:\n"
+        + voice_name
+        + "\n\n"
+        "⚡ سرعت را انتخاب کن:",
+
+        reply_markup=
+        InlineKeyboardMarkup(
+            keyboard
+        )
+    )
+
+
+# =================================
+# SPEED
+# =================================
+
+async def speed_selected(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    query = update.callback_query
+
+    await query.answer()
+
+    key = query.data.replace(
+        "speed_",
+        ""
+    )
+
+    if key not in SPEEDS:
+        return
+
+    voice = context.user_data.get(
+        "voice"
+    )
+
+    if not voice:
+
+        await query.edit_message_text(
+            "⚠️ ابتدا Voice را انتخاب کن."
+        )
+
+        return
+
+    speed_name, speed_value = SPEEDS[key]
+
+    context.user_data["speed"] = {
+        "name": speed_name,
+        "value": speed_value
+    }
+
+    await query.edit_message_text(
+
+        "✅ تنظیمات آماده است.\n\n"
+
+        "🎙 Voice: " +
+        voice["name"] +
+
+        "\n⚡ Speed: " +
+        speed_name +
+
         "\n\n"
-        "حالا متن هلندی را بفرست."
+
+        "🇳🇱 حالا فقط متن هلندی را بفرست."
 
     )
 
 
+# =================================
+# GENERATE VOICE
+# =================================
+
 async def generate_voice(
     text,
-    voice_value
+    voice_value,
+    speed_value
 ):
+
+    filename = (
+        "/tmp/dutch_voice_" +
+        str(int(time.time())) +
+        ".mp3"
+    )
 
     async with async_playwright() as p:
 
         browser = await p.chromium.launch(
+
             headless=True,
 
             args=[
@@ -130,6 +264,7 @@ async def generate_voice(
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
             ]
+
         )
 
         page = await browser.new_page(
@@ -150,9 +285,16 @@ async def generate_voice(
                 "domcontentloaded",
 
                 timeout=60000
+
             )
 
-            # Cookie
+            await page.wait_for_timeout(
+                3000
+            )
+
+            # -------------------------
+            # COOKIE
+            # -------------------------
 
             accept = page.get_by_role(
                 "button",
@@ -174,7 +316,9 @@ async def generate_voice(
                 2000
             )
 
-            # Language
+            # -------------------------
+            # LANGUAGE
+            # -------------------------
 
             language = page.locator(
                 "#languageSelect"
@@ -188,7 +332,9 @@ async def generate_voice(
                 2000
             )
 
-            # Voice
+            # -------------------------
+            # VOICE
+            # -------------------------
 
             voice_select = page.locator(
                 "#voiceSelect"
@@ -202,7 +348,9 @@ async def generate_voice(
                 1000
             )
 
-            # Text
+            # -------------------------
+            # TEXT
+            # -------------------------
 
             textarea = page.locator(
                 "textarea"
@@ -212,11 +360,69 @@ async def generate_voice(
                 text
             )
 
-            await page.wait_for_timeout(
-                500
+            # اطمینان از اینکه فقط متن ماست
+            actual_text = await textarea.input_value()
+
+            print(
+                "TEXT SENT:",
+                actual_text
             )
 
-            # Generate
+            # -------------------------
+            # SPEED
+            # -------------------------
+
+            ranges = page.locator(
+                'input[type="range"]'
+            )
+
+            range_count = await ranges.count()
+
+            print(
+                "Range inputs:",
+                range_count
+            )
+
+            if range_count >= 2:
+
+                speed = ranges.nth(1)
+
+                await speed.evaluate(
+
+                    """
+                    (element, value) => {
+
+                        element.value = value;
+
+                        element.dispatchEvent(
+                            new Event(
+                                'input',
+                                {bubbles: true}
+                            )
+                        );
+
+                        element.dispatchEvent(
+                            new Event(
+                                'change',
+                                {bubbles: true}
+                            )
+                        );
+
+                    }
+                    """,
+
+                    str(speed_value)
+
+                )
+
+                print(
+                    "Speed:",
+                    speed_value
+                )
+
+            # -------------------------
+            # GENERATE
+            # -------------------------
 
             generate_button = (
                 page.get_by_role(
@@ -225,17 +431,28 @@ async def generate_voice(
                 )
             )
 
-            await generate_button.click()
+            await generate_button.wait_for(
+                state="visible",
+                timeout=30000
+            )
 
             print(
                 "Generating..."
             )
 
+            await generate_button.click()
+
+            # -------------------------
+            # WAIT
+            # -------------------------
+
             await page.wait_for_timeout(
                 10000
             )
 
-            # Download
+            # -------------------------
+            # DOWNLOAD
+            # -------------------------
 
             download_button = (
                 page.get_by_role(
@@ -250,31 +467,32 @@ async def generate_voice(
             )
 
             async with page.expect_download(
-                timeout=30000
+                timeout=60000
             ) as info:
 
                 await download_button.click()
 
             download = await info.value
 
-            file_path = (
-                "/tmp/dutch_voice.mp3"
-            )
-
             await download.save_as(
-                file_path
+                filename
             )
 
             print(
-                "Audio saved."
+                "Saved:",
+                filename
             )
 
-            return file_path
+            return filename
 
         finally:
 
             await browser.close()
 
+
+# =================================
+# TEXT
+# =================================
 
 async def text_handler(
     update: Update,
@@ -288,13 +506,16 @@ async def text_handler(
     if not text:
         return
 
+    # جلوگیری از تبدیل دستورات به صدا
+    if text.startswith("/"):
+        return
+
     if len(text) > 5000:
 
         await update.message.reply_text(
 
-            "⚠️ متن شما بیشتر از "
-            "5000 کاراکتر است.\n\n"
-            "لطفاً متن کوتاه‌تری بفرست."
+            "⚠️ متن بیشتر از "
+            "5000 کاراکتر است."
 
         )
 
@@ -315,11 +536,29 @@ async def text_handler(
 
         return
 
+    speed = context.user_data.get(
+        "speed"
+    )
+
+    if not speed:
+
+        await update.message.reply_text(
+
+            "⚠️ ابتدا Speed را انتخاب کن."
+
+        )
+
+        return
+
     await update.message.reply_text(
 
         "🎙 در حال ساخت فایل صوتی...\n\n"
+
         "🇳🇱 Voice: " +
-        voice["name"]
+        voice["name"] +
+
+        "\n⚡ Speed: " +
+        speed["name"]
 
     )
 
@@ -331,18 +570,20 @@ async def text_handler(
 
             text,
 
-            voice["value"]
+            voice["value"],
+
+            speed["value"]
 
         )
 
         with open(
             file_path,
             "rb"
-        ) as audio_file:
+        ) as audio:
 
             await update.message.reply_audio(
 
-                audio=audio_file,
+                audio=audio,
 
                 filename=
                 "dutch_voice.mp3",
@@ -351,16 +592,16 @@ async def text_handler(
 
                     "🇳🇱 Dutch Voice\n"
                     "🎙 " +
-                    voice["name"]
+                    voice["name"] +
+                    "\n⚡ " +
+                    speed["name"]
 
                 )
 
             )
 
-        await update.message.reply_text(
-
-            "✅ فایل صوتی آماده شد."
-
+        print(
+            "Audio sent."
         )
 
     except Exception as e:
@@ -385,10 +626,18 @@ async def text_handler(
         ):
 
             try:
-                os.remove(file_path)
+
+                os.remove(
+                    file_path
+                )
+
             except Exception:
                 pass
 
+
+# =================================
+# MAIN
+# =================================
 
 def main():
 
@@ -420,6 +669,13 @@ def main():
     )
 
     app.add_handler(
+        CallbackQueryHandler(
+            speed_selected,
+            pattern="^speed_"
+        )
+    )
+
+    app.add_handler(
         MessageHandler(
             filters.TEXT &
             ~filters.COMMAND,
@@ -435,4 +691,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
