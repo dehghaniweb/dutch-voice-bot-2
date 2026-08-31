@@ -2,16 +2,6 @@ name: Dutch Voice Bot 2
 
 on:
   workflow_dispatch:
-    inputs:
-      voice_text:
-        description: "Dutch text"
-        required: true
-        type: string
-
-      chat_id:
-        description: "Telegram chat ID"
-        required: true
-        type: string
 
 jobs:
   run-bot:
@@ -35,6 +25,5 @@ jobs:
       - name: Run bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ github.event.inputs.chat_id }}
-          VOICE_TEXT: ${{ github.event.inputs.voice_text }}
-        run: python bot.py
+        run: |
+          python bot.py
